@@ -93,8 +93,8 @@ CLUSTER_ID=$(aws emr create-cluster \
   --release-label "$RELEASE" \
   --applications Name=Hadoop \
   --instance-groups \
-    "InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m5.xlarge" \
-    "InstanceGroupType=CORE,InstanceCount=2,InstanceType=m5.xlarge" \
+    "InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m4.large" \
+    "InstanceGroupType=CORE,InstanceCount=1,InstanceType=m4.large" \
   --use-default-roles \
   --region "$REGION" \
   --log-uri "s3://$BUCKET/logs/" \
