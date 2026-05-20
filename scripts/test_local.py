@@ -1,82 +1,131 @@
 #!/usr/bin/env python3
 """
 Prueba local del pipeline MapReduce sin necesitar EMR.
-Simula las fases Map → Sort → Combine → Sort → Reduce.
+Simula Map → Shuffle → Combine → Reduce procesando los archivos de data/documents/.
+
+Requiere ejecutar primero:
+  python3 scripts/split_titles.py
 
 Uso:
   python3 scripts/test_local.py
-  python3 scripts/test_local.py titles.txt data/index.txt
+  python3 scripts/test_local.py data/documents data/index.txt
 """
 import os
 import sys
-import subprocess
+import re
+import json
+from collections import defaultdict
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+STOPWORDS = {
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+    'of', 'with', 'is', 'it', 'this', 'that', 'was', 'are', 'be', 'as',
+    'by', 'from', 'not', 'have', 'had', 'has', 'he', 'she', 'they', 'we',
+    'you', 'i', 'do', 'did', 'so', 'if', 'up', 'out', 'no', 'its', 'my',
+    'me', 'him', 'her', 'his', 'our', 'your', 'their', 'been', 'were',
+}
+TOKEN_RE = re.compile(r'\b[a-z]{2,}\b')
 
-def run(script, stdin_data, env=None):
-    result = subprocess.run(
-        [sys.executable, script],
-        input=stdin_data,
-        capture_output=True,
-        env={**os.environ, **(env or {})}
-    )
-    if result.returncode != 0:
-        print(f"ERROR en {script}:\n{result.stderr.decode()}")
-        sys.exit(1)
-    return result.stdout
+
+def mapper_phase(docs_dir):
+    records = []
+    files = sorted(Path(docs_dir).glob('*.txt'))
+    total = len(files)
+    print(f"      {total:,} documentos encontrados")
+
+    for i, filepath in enumerate(files, 1):
+        doc = filepath.name
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                for word in TOKEN_RE.findall(line.lower()):
+                    if word not in STOPWORDS:
+                        records.append((word, doc, 1))
+        if i % 10000 == 0 or i == total:
+            print(f"      {i:>{len(str(total))}}/{total} archivos mapeados...")
+
+    return records
+
+
+def combiner_phase(records):
+    counts = defaultdict(int)
+    for word, doc, count in records:
+        counts[(word, doc)] += count
+    return [(w, d, c) for (w, d), c in counts.items()]
+
+
+def reducer_phase(records, output_file):
+    index = defaultdict(lambda: defaultdict(int))
+    for word, doc, count in records:
+        index[word][doc] += count
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        for word in sorted(index.keys()):
+            sorted_docs = sorted(index[word].items(), key=lambda x: x[1], reverse=True)
+            f.write(f"{word}\t{json.dumps(sorted_docs, ensure_ascii=False)}\n")
+
+    return len(index)
 
 
 def main():
-    input_file = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'titles.txt')
+    docs_dir    = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'data', 'documents')
     output_file = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, 'data', 'index.txt')
+    map_file    = os.path.join(ROOT, 'data', 'doc_map.txt')
+
+    if not os.path.isdir(docs_dir):
+        print(f"Error: no existe {docs_dir}")
+        print("Ejecuta primero:  python3 scripts/split_titles.py")
+        sys.exit(1)
 
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
-
-    mapper   = os.path.join(ROOT, 'src', 'mapper.py')
-    combiner = os.path.join(ROOT, 'src', 'combiner.py')
-    reducer  = os.path.join(ROOT, 'src', 'reducer.py')
-
-    print(f"Input : {input_file}")
+    print(f"Input : {docs_dir}/")
     print(f"Output: {output_file}")
     print()
 
-    with open(input_file, 'rb') as f:
-        raw = f.read()
-
-    # Map
     print("[1/4] Mapper...")
-    mapped = run(mapper, raw, env={'map_input_file': input_file})
-    print(f"      {len(mapped.splitlines()):,} registros emitidos")
+    records = mapper_phase(docs_dir)
+    print(f"      {len(records):,} registros emitidos")
 
-    # Sort (shuffle simulado)
     print("[2/4] Shuffle (sort)...")
-    sorted_map = b'\n'.join(sorted(mapped.splitlines()))
+    records.sort()
 
-    # Combine
     print("[3/4] Combiner...")
-    combined = run(combiner, sorted_map)
-    sorted_combined = b'\n'.join(sorted(combined.splitlines()))
-    print(f"      {len(sorted_combined.splitlines()):,} registros tras combiner")
+    records = combiner_phase(records)
+    records.sort()
+    print(f"      {len(records):,} registros tras combiner")
 
-    # Reduce
     print("[4/4] Reducer...")
-    result = run(reducer, sorted_combined)
+    word_count = reducer_phase(records, output_file)
+    print(f"      {word_count:,} palabras únicas en el índice")
 
-    with open(output_file, 'wb') as f:
-        f.write(result)
+    # Cargar mapeo para mostrar muestra legible
+    doc_map = {}
+    if os.path.exists(map_file):
+        with open(map_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split('\t', 1)
+                if len(parts) == 2:
+                    doc_map[parts[0]] = parts[1]
 
-    lines = result.splitlines()
-    print(f"      {len(lines):,} palabras únicas en el índice")
     print()
-    print("Muestra del índice (5 entradas):")
-    for line in lines[:5]:
-        decoded = line.decode('utf-8')
-        word, docs = decoded.split('\t', 1)
-        print(f"  {word:20s} → {docs[:80]}...")
+    print("Muestra del índice (3 entradas):")
+    with open(output_file, 'r', encoding='utf-8') as f:
+        for _ in range(3):
+            line = f.readline().strip()
+            if not line:
+                break
+            word, docs_json = line.split('\t', 1)
+            docs = json.loads(docs_json)[:2]
+            docs_str = ', '.join(
+                f'{d}  "{doc_map.get(d, "?")}"' for d, _ in docs
+            )
+            print(f"  {word:15s} →  {docs_str}")
+
     print()
     print("Para buscar:")
     print(f"  python3 search/search.py --local {output_file} \"adventures island\"")
+    print(f"  python3 search/search.py --local {output_file} \"twenty years after\"")
 
 
 if __name__ == '__main__':

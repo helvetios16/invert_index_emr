@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Mapper: por cada línea (título de libro), emite (palabra, título, 1).
-Cada título es tratado como un documento independiente.
+Mapper: lee el contenido de un documento y emite (palabra, nombre_archivo, 1).
+El nombre del archivo (doc_00001.txt) se obtiene de la variable de entorno
+que Hadoop Streaming expone por cada archivo de entrada.
 """
 import sys
+import os
 import re
 
 STOPWORDS = {
@@ -17,14 +19,20 @@ STOPWORDS = {
 TOKEN_RE = re.compile(r'\b[a-z]{2,}\b')
 
 
+def get_doc_name():
+    path = os.environ.get(
+        'mapreduce_map_input_file',
+        os.environ.get('map_input_file', 'unknown.txt')
+    )
+    return os.path.basename(path)
+
+
 def main():
+    doc = get_doc_name()
     for line in sys.stdin:
-        title = line.strip()
-        if not title:
-            continue
-        for word in TOKEN_RE.findall(title.lower()):
+        for word in TOKEN_RE.findall(line.lower()):
             if word not in STOPWORDS:
-                sys.stdout.write(f"{word}\t{title}\t1\n")
+                sys.stdout.write(f"{word}\t{doc}\t1\n")
 
 
 if __name__ == '__main__':
