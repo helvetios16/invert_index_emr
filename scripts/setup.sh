@@ -135,18 +135,16 @@ STEP_JSON="[{
   \"Type\": \"STREAMING\",
   \"Name\": \"InvertedIndex\",
   \"ActionOnFailure\": \"CONTINUE\",
-  \"HadoopJarStep\": {
-    \"Jar\": \"command-runner.jar\",
-    \"Args\": [
-      \"hadoop-streaming\",
-      \"-files\", \"s3://$BUCKET/scripts/mapper.py,s3://$BUCKET/scripts/combiner.py,s3://$BUCKET/scripts/reducer.py\",
-      \"-mapper\",   \"mapper.py\",
-      \"-combiner\", \"combiner.py\",
-      \"-reducer\",  \"reducer.py\",
-      \"-input\",    \"s3://$BUCKET/input/\",
-      \"-output\",   \"s3://$BUCKET/output/\"
-    ]
-  }
+  \"Jar\": \"command-runner.jar\",
+  \"Args\": [
+    \"hadoop-streaming\",
+    \"-files\", \"s3://$BUCKET/scripts/mapper.py,s3://$BUCKET/scripts/combiner.py,s3://$BUCKET/scripts/reducer.py\",
+    \"-mapper\",   \"mapper.py\",
+    \"-combiner\", \"combiner.py\",
+    \"-reducer\",  \"reducer.py\",
+    \"-input\",    \"s3://$BUCKET/input/\",
+    \"-output\",   \"s3://$BUCKET/output/\"
+  ]
 }]"
 
 STEP_ID=$(aws emr add-steps \
