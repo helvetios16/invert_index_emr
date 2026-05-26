@@ -1,0 +1,71 @@
+BUCKET="mi-indice-gutenberg"
+REGION="us-east-1"
+
+# 1. Crear nuevo cluster
+echo "Creando cluster..."
+CLUSTER_ID=$(aws emr create-cluster \
+  --name "InvertedIndex-Gutenberg" \
+  --release-label emr-7.0.0 \
+  --applications Name=Hadoop \
+  --instance-groups \
+    "InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m4.large" \
+    "InstanceGroupType=CORE,InstanceCount=1,InstanceType=m4.large" \
+  --use-default-roles \
+  --region "$REGION" \
+  --log-uri "s3://$BUCKET/logs/" \
+  --no-auto-terminate \
+  --enable-debugging \
+  --query 'ClusterId' \
+  --output text)
+
+echo "Cluster ID: $CLUSTER_ID"
+echo "Esperando que este listo (5-10 min)..."
+
+# 2. Esperar
+aws emr wait cluster-running --cluster-id "$CLUSTER_ID" --region "$REGION"
+echo "Cluster listo."
+
+# 3. Limpiar output previo
+aws s3 rm "s3://$BUCKET/output/" --recursive 2>/dev/null || true
+
+# 4. Lanzar job
+echo "Lanzando job MapReduce..."
+STEP_ID=$(aws emr add-steps \
+  --cluster-id "$CLUSTER_ID" \
+  --region "$REGION" \
+  --steps "[{
+    \"Type\": \"STREAMING\",
+    \"Name\": \"InvertedIndex\",
+    \"ActionOnFailure\": \"CONTINUE\",
+    \"Jar\": \"command-runner.jar\",
+    \"Args\": [
+      \"hadoop-streaming\",
+      \"-files\", \"s3://$BUCKET/scripts/mapper.py,s3://$BUCKET/scripts/combiner.py,s3://$BUCKET/scripts/reducer.py\",
+      \"-mapper\",   \"mapper.py\",
+      \"-combiner\", \"combiner.py\",
+      \"-reducer\",  \"reducer.py\",
+      \"-input\",    \"s3://$BUCKET/input/\",
+      \"-output\",   \"s3://$BUCKET/output/\"
+    ]
+  }]" \
+  --query 'StepIds[0]' \
+  --output text)
+
+echo "Step ID: $STEP_ID"
+echo "Esperando que el job termine..."
+
+# 5. Esperar resultado
+aws emr wait step-complete --cluster-id "$CLUSTER_ID" --step-id "$STEP_ID" --region "$REGION"
+
+STATUS=$(aws emr describe-step \
+  --cluster-id "$CLUSTER_ID" --step-id "$STEP_ID" --region "$REGION" \
+  --query 'Step.Status.State' --output text)
+
+echo ""
+echo "Job finalizo con estado: $STATUS"
+echo ""
+echo "Para buscar:"
+echo "  python3 search/search.py --s3 $BUCKET output/ \"twenty years after\""
+echo ""
+echo "Para terminar el cluster:"
+echo "  aws emr terminate-clusters --cluster-ids $CLUSTER_ID"
