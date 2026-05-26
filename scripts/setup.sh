@@ -62,18 +62,18 @@ fi
 echo ""
 echo "[ 2/5 ] Subiendo datos y scripts a S3..."
 
-# Verificar que los documentos existen
-if [ ! -d "$ROOT_DIR/data/documents" ]; then
-  echo "        ERROR: no existe data/documents/"
-  echo "        Ejecuta primero: python3 scripts/split_titles.py"
+# Verificar que el corpus existe
+if [ ! -f "$ROOT_DIR/data/corpus.txt" ]; then
+  echo "        ERROR: no existe data/corpus.txt"
+  echo "        Ejecuta primero: python3 scripts/build_corpus.py"
   exit 1
 fi
 
-# Subir documentos individuales
-DOC_COUNT=$(find "$ROOT_DIR/data/documents" -name "*.txt" | wc -l | tr -d ' ')
-echo "        Subiendo $DOC_COUNT documentos a S3 (puede tardar unos minutos)..."
-aws s3 sync "$ROOT_DIR/data/documents/" "s3://$BUCKET/input/" --quiet
-echo "        ✓ $DOC_COUNT docs  →  s3://$BUCKET/input/"
+# Subir corpus (1 archivo, rápido)
+SIZE=$(du -sh "$ROOT_DIR/data/corpus.txt" | cut -f1)
+echo "        Subiendo corpus.txt ($SIZE) a S3..."
+aws s3 cp "$ROOT_DIR/data/corpus.txt" "s3://$BUCKET/input/corpus.txt"
+echo "        ✓ corpus.txt  →  s3://$BUCKET/input/"
 
 # Subir mapeo filename → título (para la búsqueda)
 aws s3 cp "$ROOT_DIR/data/doc_map.txt" "s3://$BUCKET/doc_map.txt"

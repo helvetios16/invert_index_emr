@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """
-Prueba local del pipeline MapReduce sin necesitar EMR.
-Simula Map → Shuffle → Combine → Reduce procesando los archivos de data/documents/.
+Prueba local del pipeline MapReduce sin EMR.
+Lee data/corpus.txt y simula Map → Shuffle → Combine → Reduce.
 
 Requiere ejecutar primero:
-  python3 scripts/split_titles.py
+  python3 scripts/build_corpus.py
 
 Uso:
   python3 scripts/test_local.py
-  python3 scripts/test_local.py data/documents data/index.txt
+  python3 scripts/test_local.py data/corpus.txt data/index.txt
 """
 import os
 import sys
 import re
 import json
 from collections import defaultdict
-from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -29,22 +28,20 @@ STOPWORDS = {
 TOKEN_RE = re.compile(r'\b[a-z]{2,}\b')
 
 
-def mapper_phase(docs_dir):
+def mapper_phase(corpus_file):
     records = []
-    files = sorted(Path(docs_dir).glob('*.txt'))
-    total = len(files)
-    print(f"      {total:,} documentos encontrados")
-
-    for i, filepath in enumerate(files, 1):
-        doc = filepath.name
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                for word in TOKEN_RE.findall(line.lower()):
-                    if word not in STOPWORDS:
-                        records.append((word, doc, 1))
-        if i % 10000 == 0 or i == total:
-            print(f"      {i:>{len(str(total))}}/{total} archivos mapeados...")
-
+    with open(corpus_file, 'r', encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split('\t', 1)
+            if len(parts) != 2:
+                continue
+            doc, content = parts
+            for word in TOKEN_RE.findall(content.lower()):
+                if word not in STOPWORDS:
+                    records.append((word, doc, 1))
     return records
 
 
@@ -69,22 +66,22 @@ def reducer_phase(records, output_file):
 
 
 def main():
-    docs_dir    = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'data', 'documents')
+    corpus_file = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'data', 'corpus.txt')
     output_file = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, 'data', 'index.txt')
     map_file    = os.path.join(ROOT, 'data', 'doc_map.txt')
 
-    if not os.path.isdir(docs_dir):
-        print(f"Error: no existe {docs_dir}")
-        print("Ejecuta primero:  python3 scripts/split_titles.py")
+    if not os.path.exists(corpus_file):
+        print(f"Error: no existe {corpus_file}")
+        print("Ejecuta primero:  python3 scripts/build_corpus.py")
         sys.exit(1)
 
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    print(f"Input : {docs_dir}/")
-    print(f"Output: {output_file}")
+    size_mb = os.path.getsize(corpus_file) / 1024 / 1024
+    print(f"Corpus : {corpus_file}  ({size_mb:.1f} MB)")
+    print(f"Output : {output_file}")
     print()
 
     print("[1/4] Mapper...")
-    records = mapper_phase(docs_dir)
+    records = mapper_phase(corpus_file)
     print(f"      {len(records):,} registros emitidos")
 
     print("[2/4] Shuffle (sort)...")
@@ -99,7 +96,7 @@ def main():
     word_count = reducer_phase(records, output_file)
     print(f"      {word_count:,} palabras únicas en el índice")
 
-    # Cargar mapeo para mostrar muestra legible
+    # Cargar mapeo para muestra legible
     doc_map = {}
     if os.path.exists(map_file):
         with open(map_file, 'r', encoding='utf-8') as f:
@@ -117,14 +114,11 @@ def main():
                 break
             word, docs_json = line.split('\t', 1)
             docs = json.loads(docs_json)[:2]
-            docs_str = ', '.join(
-                f'{d}  "{doc_map.get(d, "?")}"' for d, _ in docs
-            )
+            docs_str = ',  '.join(f'{d}  "{doc_map.get(d, "?")}"' for d, _ in docs)
             print(f"  {word:15s} →  {docs_str}")
 
     print()
     print("Para buscar:")
-    print(f"  python3 search/search.py --local {output_file} \"adventures island\"")
     print(f"  python3 search/search.py --local {output_file} \"twenty years after\"")
 
 

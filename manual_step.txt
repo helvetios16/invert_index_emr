@@ -25,7 +25,19 @@ echo "Esperando que este listo (5-10 min)..."
 aws emr wait cluster-running --cluster-id "$CLUSTER_ID" --region "$REGION"
 echo "Cluster listo."
 
-# 3. Limpiar output previo
+# 3. Subir corpus si no esta en S3
+echo "Verificando corpus en S3..."
+if ! aws s3 ls "s3://$BUCKET/input/corpus.txt" >/dev/null 2>&1; then
+  echo "Subiendo corpus.txt..."
+  aws s3 cp data/corpus.txt "s3://$BUCKET/input/corpus.txt"
+  aws s3 cp data/doc_map.txt "s3://$BUCKET/doc_map.txt"
+  echo "Scripts..."
+  aws s3 cp src/mapper.py   "s3://$BUCKET/scripts/mapper.py"
+  aws s3 cp src/combiner.py "s3://$BUCKET/scripts/combiner.py"
+  aws s3 cp src/reducer.py  "s3://$BUCKET/scripts/reducer.py"
+fi
+
+# 4. Limpiar output previo
 aws s3 rm "s3://$BUCKET/output/" --recursive 2>/dev/null || true
 
 # 4. Lanzar job
