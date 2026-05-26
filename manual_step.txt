@@ -34,7 +34,7 @@ STEP_ID=$(aws emr add-steps \
   --cluster-id "$CLUSTER_ID" \
   --region "$REGION" \
   --steps "[{
-    \"Type\": \"STREAMING\",
+    \"Type\": \"CUSTOM_JAR\",
     \"Name\": \"InvertedIndex\",
     \"ActionOnFailure\": \"CONTINUE\",
     \"Jar\": \"command-runner.jar\",

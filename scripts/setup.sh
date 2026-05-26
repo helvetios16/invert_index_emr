@@ -132,7 +132,7 @@ echo ""
 echo "[ 5/5 ] Ejecutando job Hadoop Streaming..."
 
 STEP_JSON="[{
-  \"Type\": \"STREAMING\",
+  \"Type\": \"CUSTOM_JAR\",
   \"Name\": \"InvertedIndex\",
   \"ActionOnFailure\": \"CONTINUE\",
   \"Jar\": \"command-runner.jar\",
