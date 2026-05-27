@@ -92,33 +92,44 @@ Convierte `titles.txt` en un único `corpus.txt` donde cada línea es `doc_NNNNN
 Usa `--target-mb` para escalar el corpus replicando los títulos.
 
 ```bash
-# Corpus base con todos los títulos (~1.8MB)
+# Corpus base (~1.8MB) — guarda en disco local
 python3 scripts/build_corpus.py
 
-# Corpus de 500MB
+# Corpus de 500MB — guarda en disco local
 python3 scripts/build_corpus.py --target-mb 500
 
-# Corpus de 5GB
-python3 scripts/build_corpus.py --target-mb 5000
+# Corpus de 5GB — stream directo a S3 (Cloud Shell no tiene espacio suficiente)
+python3 scripts/build_corpus.py --target-mb 5000 --s3 mi-indice-gutenberg
 
 # Muestra rápida de 1000 títulos
 python3 scripts/build_corpus.py --sample 1000
 ```
 
-Salida esperada:
+> **Nota:** Cloud Shell tiene ~1GB de disco. Para corpus de 5GB usa `--s3` para subir directo sin pasar por disco local.
+
+Salida esperada (modo local):
 
 ```
-Títulos base  : 39608
-Total docs    : 39608
+Títulos base  : 39,608
+Total docs    : 39,608
 Corpus        : data/corpus.txt
 
 ✓ corpus.txt  :  39,608 docs  /  1.8 MB
 ```
 
-Puedes monitorear la generación en otra pestaña:
+Salida esperada (modo `--s3`):
 
-```bash
-watch -n 2 "du -sh data/corpus.txt"
+```
+Títulos base  : 39,608
+Repeticiones  : 2,126x  (para alcanzar ~5,000MB)
+Total docs    : 84,206,608
+Modo          : stream directo a S3 (sin disco local)
+
+  0.45 GB subidos...
+  1.23 GB subidos...
+  ...
+✓ corpus.txt  →  s3://mi-indice-gutenberg/input/corpus.txt  (5.00 GB)
+✓ doc_map.txt →  s3://mi-indice-gutenberg/doc_map.txt
 ```
 
 ---
@@ -164,16 +175,16 @@ Resultados        : 2
 
 ### Paso 4 — Subir a S3
 
-Solo necesario la primera vez o cuando cambies el corpus:
-
+**Corpus local** (base o 500MB):
 ```bash
 bash scripts/upload_s3.sh
 ```
 
-```
-[ 1/3 ] Limpiando input anterior en S3...  ✓
-[ 2/3 ] Subiendo corpus y mapeo...         ✓
-[ 3/3 ] Subiendo scripts MapReduce...      ✓
+**Corpus 5GB** — ya queda en S3 desde el paso anterior con `--s3`, solo sube los scripts:
+```bash
+aws s3 cp src/mapper.py   s3://mi-indice-gutenberg/scripts/mapper.py
+aws s3 cp src/combiner.py s3://mi-indice-gutenberg/scripts/combiner.py
+aws s3 cp src/reducer.py  s3://mi-indice-gutenberg/scripts/reducer.py
 ```
 
 ---
