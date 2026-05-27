@@ -1,7 +1,28 @@
+# =============================================================================
+# manual_step.txt — Crea cluster EMR y ejecuta el job de índice invertido
+#
+# PRE-REQUISITO: tener corpus.txt y scripts en S3.
+# Si es la primera vez o cambiaste el corpus, ejecuta primero:
+#
+#   python3 scripts/build_corpus.py                  <- corpus base (~1.8MB)
+#   python3 scripts/build_corpus.py --target-mb 500  <- corpus de 500MB
+#   python3 scripts/build_corpus.py --target-mb 5000 <- corpus de ~5GB
+#
+#   aws s3 rm s3://mi-indice-gutenberg/input/ --recursive
+#   aws s3 cp data/corpus.txt   s3://mi-indice-gutenberg/input/corpus.txt
+#   aws s3 cp data/doc_map.txt  s3://mi-indice-gutenberg/doc_map.txt
+#   aws s3 cp src/mapper.py     s3://mi-indice-gutenberg/scripts/mapper.py
+#   aws s3 cp src/combiner.py   s3://mi-indice-gutenberg/scripts/combiner.py
+#   aws s3 cp src/reducer.py    s3://mi-indice-gutenberg/scripts/reducer.py
+#
+# Uso:
+#   bash manual_step.txt
+# =============================================================================
+
 BUCKET="mi-indice-gutenberg"
 REGION="us-east-1"
 
-# 1. Crear nuevo cluster
+# ── 1. Crear cluster ──────────────────────────────────────────────────────────
 echo "Creando cluster..."
 CLUSTER_ID=$(aws emr create-cluster \
   --name "InvertedIndex-Gutenberg" \
@@ -20,27 +41,13 @@ CLUSTER_ID=$(aws emr create-cluster \
 
 echo "Cluster ID: $CLUSTER_ID"
 echo "Esperando que este listo (5-10 min)..."
-
-# 2. Esperar
 aws emr wait cluster-running --cluster-id "$CLUSTER_ID" --region "$REGION"
 echo "Cluster listo."
 
-# 3. Subir corpus si no esta en S3
-echo "Verificando corpus en S3..."
-if ! aws s3 ls "s3://$BUCKET/input/corpus.txt" >/dev/null 2>&1; then
-  echo "Subiendo corpus.txt..."
-  aws s3 cp data/corpus.txt "s3://$BUCKET/input/corpus.txt"
-  aws s3 cp data/doc_map.txt "s3://$BUCKET/doc_map.txt"
-  echo "Scripts..."
-  aws s3 cp src/mapper.py   "s3://$BUCKET/scripts/mapper.py"
-  aws s3 cp src/combiner.py "s3://$BUCKET/scripts/combiner.py"
-  aws s3 cp src/reducer.py  "s3://$BUCKET/scripts/reducer.py"
-fi
-
-# 4. Limpiar output previo
+# ── 2. Limpiar output previo ──────────────────────────────────────────────────
 aws s3 rm "s3://$BUCKET/output/" --recursive 2>/dev/null || true
 
-# 4. Lanzar job
+# ── 3. Lanzar job MapReduce ───────────────────────────────────────────────────
 echo "Lanzando job MapReduce..."
 STEP_ID=$(aws emr add-steps \
   --cluster-id "$CLUSTER_ID" \
@@ -65,10 +72,9 @@ STEP_ID=$(aws emr add-steps \
 
 echo "Step ID: $STEP_ID"
 echo "Esperando que el job termine..."
-
-# 5. Esperar resultado
 aws emr wait step-complete --cluster-id "$CLUSTER_ID" --step-id "$STEP_ID" --region "$REGION"
 
+# ── 4. Resultado ──────────────────────────────────────────────────────────────
 STATUS=$(aws emr describe-step \
   --cluster-id "$CLUSTER_ID" --step-id "$STEP_ID" --region "$REGION" \
   --query 'Step.Status.State' --output text)
@@ -78,6 +84,7 @@ echo "Job finalizo con estado: $STATUS"
 echo ""
 echo "Para buscar:"
 echo "  python3 search/search.py --s3 $BUCKET output/ \"twenty years after\""
+echo "  python3 search/search.py --s3 $BUCKET output/ \"adventures island\""
 echo ""
-echo "Para terminar el cluster:"
+echo "Para terminar el cluster (evitar cobros):"
 echo "  aws emr terminate-clusters --cluster-ids $CLUSTER_ID"
