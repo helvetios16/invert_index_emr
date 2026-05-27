@@ -11,7 +11,7 @@ titles.txt (39,608 títulos)
        │
        ▼
 build_corpus.py
-       │  genera un único corpus.txt con formato: doc_NNNNN.txt TAB título
+       │  genera un único corpus.txt: doc_NNNNN.txt TAB título
        ▼
 data/corpus.txt                    data/doc_map.txt
 doc_00001.txt  Pride and Prejudice  doc_00001.txt → Pride and Prejudice
@@ -46,21 +46,21 @@ doc_00002.txt  Frankenstein         doc_00002.txt → Frankenstein
 
 ```
 invert_index_emr/
-├── titles.txt               ← corpus: 39,608 títulos de Project Gutenberg
+├── titles.txt                ← corpus: 39,608 títulos de Project Gutenberg
 ├── src/
-│   ├── mapper.py            ← fase Map: lee doc_id TAB contenido → (palabra, doc, 1)
-│   ├── combiner.py          ← pre-agrega localmente antes del shuffle
-│   └── reducer.py           ← fase Reduce: construye el índice final
+│   ├── mapper.py             ← fase Map: lee doc_id TAB contenido → (palabra, doc, 1)
+│   ├── combiner.py           ← pre-agrega localmente antes del shuffle
+│   └── reducer.py            ← fase Reduce: construye el índice final
 ├── search/
-│   └── search.py            ← búsqueda AND con ranking por frecuencia
+│   └── search.py             ← búsqueda AND con ranking por frecuencia
 ├── scripts/
-│   ├── build_corpus.py      ← genera data/corpus.txt (1 archivo, escalable)
-│   ├── setup.sh             ← configura S3 + EMR + lanza el job (todo en uno)
-│   ├── clean_local.sh       ← limpia archivos generados localmente
-│   ├── cleanup.sh           ← elimina todos los recursos de AWS
-│   ├── status.sh            ← muestra estado de S3, EMR y clústeres
-│   └── test_local.py        ← simula MapReduce localmente sin AWS
-├── manual_step.txt          ← crea cluster y lanza job (cuando S3 ya está listo)
+│   ├── build_corpus.py       ← genera data/corpus.txt (escalable a 5GB+)
+│   ├── upload_s3.sh          ← sube corpus y scripts a S3
+│   ├── manual_step.sh        ← crea cluster EMR y lanza el job
+│   ├── setup.sh              ← todo en uno (corpus + S3 + EMR)
+│   ├── status.sh             ← estado de S3, clústeres y output
+│   ├── clean_local.sh        ← limpia archivos locales generados
+│   └── cleanup.sh            ← elimina todos los recursos de AWS
 └── requirements.txt
 ```
 
@@ -88,16 +88,17 @@ wc -l titles.txt    # debe mostrar 39608
 
 ### Paso 1 — Generar el corpus
 
-Convierte `titles.txt` en un único archivo `corpus.txt` donde cada línea es `doc_NNNNN.txt\ttítulo`.
+Convierte `titles.txt` en un único `corpus.txt` donde cada línea es `doc_NNNNN.txt\ttítulo`.
+Usa `--target-mb` para escalar el corpus replicando los títulos.
 
 ```bash
 # Corpus base con todos los títulos (~1.8MB)
 python3 scripts/build_corpus.py
 
-# Corpus de 500MB (para demo de escala)
+# Corpus de 500MB
 python3 scripts/build_corpus.py --target-mb 500
 
-# Corpus de ~5GB
+# Corpus de 5GB
 python3 scripts/build_corpus.py --target-mb 5000
 
 # Muestra rápida de 1000 títulos
@@ -110,39 +111,33 @@ Salida esperada:
 Títulos base  : 39608
 Total docs    : 39608
 Corpus        : data/corpus.txt
-Mapeo         : data/doc_map.txt
 
 ✓ corpus.txt  :  39,608 docs  /  1.8 MB
+```
+
+Puedes monitorear la generación en otra pestaña:
+
+```bash
+watch -n 2 "du -sh data/corpus.txt"
 ```
 
 ---
 
 ### Paso 2 — Prueba local (sin AWS)
 
-Valida el pipeline completo en tu máquina antes de gastar en EMR.
+Valida el pipeline antes de gastar en EMR:
 
 ```bash
 python3 scripts/test_local.py
 ```
 
-Salida esperada:
-
 ```
 Corpus : data/corpus.txt  (1.8 MB)
-Output : data/index.txt
 
-[1/4] Mapper...
-      192,450 registros emitidos
-[2/4] Shuffle (sort)...
-[3/4] Combiner...
-      187,279 registros tras combiner
-[4/4] Reducer...
-      24,306 palabras únicas en el índice
-
-Muestra del índice (3 entradas):
-  abbey      →  doc_00028.txt  "Northanger Abbey"
-  adventures →  doc_00148.txt  "The Swiss Family Robinson; or Adventures..."
-  war        →  doc_00089.txt  "The Art of War"
+[1/4] Mapper...      192,450 registros emitidos
+[2/4] Shuffle...
+[3/4] Combiner...    187,279 registros tras combiner
+[4/4] Reducer...     24,306 palabras únicas en el índice
 ```
 
 ---
@@ -150,30 +145,11 @@ Muestra del índice (3 entradas):
 ### Paso 3 — Búsquedas de prueba (local)
 
 ```bash
-python3 search/search.py --local data/index.txt "<consulta>"
-```
-
-**Una sola palabra:**
-
-```bash
-python3 search/search.py --local data/index.txt "adventures"
-```
-```
-Búsqueda: "adventures"
-───────────────────────────────────────────────────────
-Palabras buscadas : ['adventures']
-Resultados        : 5
-
-   1. doc_00148.txt  "The Swiss Family Robinson; or Adventures in a Desert Island"  (score: 1)
-   2. doc_00266.txt  "The Female Quixote; or, The Adventures of Arabella"  (score: 1)
-   3. doc_00317.txt  "Wonderful Adventures of Mrs. Seacole in Many Lands"  (score: 1)
-```
-
-**Múltiples palabras (AND):**
-
-```bash
+python3 search/search.py --local data/index.txt "adventures island"
 python3 search/search.py --local data/index.txt "twenty years after"
+python3 search/search.py --local data/index.txt "war peace"
 ```
+
 ```
 Búsqueda: "twenty years after"
 ───────────────────────────────────────────────────────
@@ -188,54 +164,62 @@ Resultados        : 2
 
 ### Paso 4 — Subir a S3
 
-Solo necesario la **primera vez** o cuando cambies el corpus:
+Solo necesario la primera vez o cuando cambies el corpus:
 
 ```bash
-# Limpiar input anterior si existe
-aws s3 rm s3://mi-indice-gutenberg/input/ --recursive
+bash scripts/upload_s3.sh
+```
 
-# Subir corpus (1 archivo, tarda segundos)
-aws s3 cp data/corpus.txt   s3://mi-indice-gutenberg/input/corpus.txt
-aws s3 cp data/doc_map.txt  s3://mi-indice-gutenberg/doc_map.txt
-
-# Subir scripts MapReduce
-aws s3 cp src/mapper.py     s3://mi-indice-gutenberg/scripts/mapper.py
-aws s3 cp src/combiner.py   s3://mi-indice-gutenberg/scripts/combiner.py
-aws s3 cp src/reducer.py    s3://mi-indice-gutenberg/scripts/reducer.py
+```
+[ 1/3 ] Limpiando input anterior en S3...  ✓
+[ 2/3 ] Subiendo corpus y mapeo...         ✓
+[ 3/3 ] Subiendo scripts MapReduce...      ✓
 ```
 
 ---
 
 ### Paso 5 — Lanzar en EMR
 
+Elige el número de cores según el tamaño del corpus:
+
 ```bash
+# Corpus base (~1.8MB) — 1 core
 bash scripts/manual_step.sh
+
+# Corpus de 500MB — 2 cores
+bash scripts/manual_step.sh --cores 2
+
+# Corpus de 5GB — 3 cores
+bash scripts/manual_step.sh --cores 3
 ```
-
-El script crea el clúster, espera que esté listo, lanza el job y muestra el resultado.
-
-**Configuración del clúster:**
-- 1 master `m4.large` + 1 core `m4.large`
-- Costo: ~$0.20/hr · Job tarda ~5-15 min según tamaño del corpus
 
 **Tiempos estimados:**
 
-| Tamaño corpus | Subida a S3 | Job EMR |
-|---|---|---|
-| 1.8 MB (base) | segundos | ~5 min |
-| 500 MB | ~1-2 min | ~10 min |
-| 5 GB | ~3-5 min | ~20-30 min |
+| Tamaño corpus | Cores | Generación local | Subida S3 | Job EMR |
+|---|---|---|---|---|
+| 1.8 MB (base) | 1 | segundos | segundos | ~5 min |
+| 500 MB | 2 | ~1 min | ~1-2 min | ~10 min |
+| 5 GB | 3 | ~3-5 min | ~3-5 min | ~20 min |
 
 Al terminar:
 
 ```
-Job finalizo con estado: COMPLETED
+╔══════════════════════════════════════════════════╗
+║   JOB COMPLETADO                                 ║
+╚══════════════════════════════════════════════════╝
 
-Para buscar:
-  python3 search/search.py --s3 mi-indice-gutenberg output/ "twenty years after"
+  Buscar en el índice:
+    python3 search/search.py --s3 mi-indice-gutenberg output/ "twenty years after"
 
-Para terminar el cluster (evitar cobros):
-  aws emr terminate-clusters --cluster-ids j-XXXXXXXXXXXXX
+  Terminar cluster (evitar cobros):
+    aws emr terminate-clusters --cluster-ids j-XXXXXXXXXXXXX
+```
+
+**Terminar todos los clústeres activos de una vez:**
+
+```bash
+aws emr terminate-clusters --cluster-ids $(aws emr list-clusters --active \
+  --query 'Clusters[*].Id' --output text)
 ```
 
 ---
@@ -251,7 +235,7 @@ python3 search/search.py --s3 mi-indice-gutenberg output/ "pride prejudice"
 
 ---
 
-## Verificar estado del proyecto
+## Verificar estado
 
 ```bash
 bash scripts/status.sh
@@ -268,18 +252,14 @@ Muestra estado del bucket S3, output del job, clústeres activos y comandos úti
 bash scripts/clean_local.sh
 ```
 
-**Todo en AWS** (clúster + bucket S3 completo):
+**Todo en AWS** (clúster + bucket S3):
 ```bash
 bash scripts/cleanup.sh
 ```
 
-Ambos dejan el proyecto como después de `git clone`.
-
 ---
 
 ## Formato del índice generado
-
-Cada línea del output de Hadoop:
 
 ```
 palabra   [["doc_00001.txt", frecuencia], ["doc_00003.txt", frecuencia], ...]
@@ -288,7 +268,7 @@ palabra   [["doc_00001.txt", frecuencia], ["doc_00003.txt", frecuencia], ...]
 Ejemplo:
 
 ```
-war        [["doc_00089.txt", 2], ["doc_00412.txt", 1], ["doc_00531.txt", 1]]
+war        [["doc_00089.txt", 2], ["doc_00412.txt", 1]]
 adventure  [["doc_00148.txt", 1], ["doc_00266.txt", 1]]
 ```
 
