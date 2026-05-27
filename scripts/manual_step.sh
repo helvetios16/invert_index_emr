@@ -41,6 +41,36 @@ echo "  Región : $REGION"
 echo "  Cluster: 1 master + $CORES core(s)  (m4.large)"
 echo ""
 
+# ── Validaciones previas ──────────────────────────────────────────────────────
+if ! [[ "$CORES" =~ ^[0-9]+$ ]] || [ "$CORES" -lt 1 ]; then
+  echo "ERROR: --cores debe ser un número >= 1 (recibido: '$CORES')"
+  exit 1
+fi
+
+echo "Verificando recursos en S3..."
+for KEY in "input/corpus.txt" "scripts/mapper.py" "scripts/combiner.py" "scripts/reducer.py"; do
+  if ! aws s3 ls "s3://$BUCKET/$KEY" >/dev/null 2>&1; then
+    echo "ERROR: no existe s3://$BUCKET/$KEY"
+    echo "Ejecuta primero: bash scripts/upload_s3.sh"
+    exit 1
+  fi
+done
+echo "✓ Todos los archivos encontrados en S3."
+echo ""
+
+# ── Trap: terminar cluster si se interrumpe ───────────────────────────────────
+CLUSTER_ID=""
+cleanup() {
+  if [ -n "$CLUSTER_ID" ]; then
+    echo ""
+    echo "Interrupción detectada. Terminando cluster $CLUSTER_ID ..."
+    aws emr terminate-clusters --cluster-ids "$CLUSTER_ID" --region "$REGION" 2>/dev/null || true
+    echo "Cluster terminado."
+  fi
+  exit 1
+}
+trap cleanup INT TERM
+
 # ── 1. Crear cluster ──────────────────────────────────────────────────────────
 echo "[ 1/3 ] Creando cluster..."
 CLUSTER_ID=$(aws emr create-cluster \

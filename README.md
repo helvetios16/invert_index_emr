@@ -180,7 +180,7 @@ Resultados        : 2
 bash scripts/upload_s3.sh
 ```
 
-**Corpus 5GB** — ya queda en S3 desde el paso anterior con `--s3`, solo sube los scripts:
+**Corpus 5GB** — el flag `--s3` limpia el input anterior y sube directo. Solo falta subir los scripts:
 ```bash
 aws s3 cp src/mapper.py   s3://mi-indice-gutenberg/scripts/mapper.py
 aws s3 cp src/combiner.py s3://mi-indice-gutenberg/scripts/combiner.py

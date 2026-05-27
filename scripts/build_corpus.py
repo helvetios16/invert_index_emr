@@ -68,7 +68,15 @@ def stream_to_s3(titles, repeats, bucket):
     part_num  = 1
     uploaded  = 0
 
-    corpus_key  = 'input/corpus.txt'
+    # Limpiar input anterior
+    print(f"  Limpiando s3://{bucket}/input/ ...")
+    paginator = s3.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=bucket, Prefix='input/'):
+        objects = [{'Key': o['Key']} for o in page.get('Contents', [])]
+        if objects:
+            s3.delete_objects(Bucket=bucket, Delete={'Objects': objects})
+
+    corpus_key = 'input/corpus.txt'
     mpu = s3.create_multipart_upload(Bucket=bucket, Key=corpus_key,
                                      ContentType='text/plain')
     upload_id = mpu['UploadId']
