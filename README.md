@@ -209,7 +209,7 @@ aws s3 cp src/reducer.py    s3://mi-indice-gutenberg/scripts/reducer.py
 ### Paso 5 — Lanzar en EMR
 
 ```bash
-bash manual_step.txt
+bash scripts/manual_step.sh
 ```
 
 El script crea el clúster, espera que esté listo, lanza el job y muestra el resultado.

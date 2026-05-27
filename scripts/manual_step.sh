@@ -1,26 +1,20 @@
+#!/bin/bash
 # =============================================================================
-# manual_step.txt — Crea cluster EMR y ejecuta el job de índice invertido
+# manual_step.sh — Crea cluster EMR y ejecuta el job de índice invertido
 #
 # PRE-REQUISITO: tener corpus.txt y scripts en S3.
 # Si es la primera vez o cambiaste el corpus, ejecuta primero:
-#
-#   python3 scripts/build_corpus.py                  <- corpus base (~1.8MB)
-#   python3 scripts/build_corpus.py --target-mb 500  <- corpus de 500MB
-#   python3 scripts/build_corpus.py --target-mb 5000 <- corpus de ~5GB
-#
-#   aws s3 rm s3://mi-indice-gutenberg/input/ --recursive
-#   aws s3 cp data/corpus.txt   s3://mi-indice-gutenberg/input/corpus.txt
-#   aws s3 cp data/doc_map.txt  s3://mi-indice-gutenberg/doc_map.txt
-#   aws s3 cp src/mapper.py     s3://mi-indice-gutenberg/scripts/mapper.py
-#   aws s3 cp src/combiner.py   s3://mi-indice-gutenberg/scripts/combiner.py
-#   aws s3 cp src/reducer.py    s3://mi-indice-gutenberg/scripts/reducer.py
+#   python3 scripts/build_corpus.py [--target-mb 500]
+#   bash scripts/upload_s3.sh [bucket]
 #
 # Uso:
-#   bash manual_step.txt
+#   bash scripts/manual_step.sh                          <- usa defaults
+#   bash scripts/manual_step.sh mi-bucket us-east-1     <- parámetros custom
 # =============================================================================
+set -euo pipefail
 
-BUCKET="mi-indice-gutenberg"
-REGION="us-east-1"
+BUCKET="${1:-mi-indice-gutenberg}"
+REGION="${2:-us-east-1}"
 
 # ── 1. Crear cluster ──────────────────────────────────────────────────────────
 echo "Creando cluster..."
