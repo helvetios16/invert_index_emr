@@ -153,6 +153,8 @@ def stream_to_s3_copy(titles, target_mb, bucket):
     finally:
         s3.delete_object(Bucket=bucket, Key=base_key)
 
+    return digits, base_repeats
+
 
 # ── S3 streaming (fallback para corpus sin --target-mb) ───────────────────────
 
@@ -215,15 +217,29 @@ def stream_to_s3(titles, repeats, bucket):
 
 # ── doc_map.txt ───────────────────────────────────────────────────────────────
 
-def upload_map_to_s3(titles, bucket):
+def upload_map_to_s3(titles, bucket, digits=None, repeats=1):
+    """
+    Sube doc_map.txt a S3 con los mismos doc IDs que corpus.txt.
+    Con repeats > 1 (server-side copy), genera las entradas para TODOS
+    los docs del chunk base para que los IDs coincidan con el índice.
+    """
     import boto3
-    s3      = boto3.client('s3')
-    digits  = len(str(len(titles)))
-    content = ''.join(
-        f"doc_{i:0{digits}d}.txt\t{t}\n" for i, t in enumerate(titles, 1)
-    ).encode('utf-8')
+    s3    = boto3.client('s3')
+    total = len(titles) * repeats
+    if digits is None:
+        digits = len(str(len(titles)))
+
+    lines   = []
+    doc_num = 1
+    for _ in range(repeats):
+        for title in titles:
+            lines.append(f"doc_{doc_num:0{digits}d}.txt\t{title}\n")
+            doc_num += 1
+
+    content  = ''.join(lines).encode('utf-8')
+    size_mb  = len(content) / 1024 / 1024
     s3.put_object(Bucket=bucket, Key='doc_map.txt', Body=content)
-    print(f"✓ doc_map.txt →  s3://{bucket}/doc_map.txt  ({len(titles):,} entradas)")
+    print(f"✓ doc_map.txt →  s3://{bucket}/doc_map.txt  ({total:,} entradas / {size_mb:.1f} MB)")
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -273,13 +289,14 @@ def main():
             # Fast path: server-side copy, no data sent over the network repeatedly
             print(f"Modo          : S3 server-side copy (rápido, sin datos por red)")
             print()
-            stream_to_s3_copy(titles, target_mb, s3_bucket)
+            digits, base_repeats = stream_to_s3_copy(titles, target_mb, s3_bucket)
+            upload_map_to_s3(titles, s3_bucket, digits=digits, repeats=base_repeats)
         else:
             # Small corpus: upload directly
             print(f"Modo          : stream directo a S3")
             print()
             stream_to_s3(titles, repeats, s3_bucket)
-        upload_map_to_s3(titles, s3_bucket)
+            upload_map_to_s3(titles, s3_bucket)
         print()
         print("Siguiente paso — subir scripts MapReduce:")
         print(f"  aws s3 cp src/mapper.py   s3://{s3_bucket}/scripts/mapper.py")
