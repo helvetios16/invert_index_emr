@@ -117,20 +117,30 @@ Corpus        : data/corpus.txt
 ✓ corpus.txt  :  39,608 docs  /  1.8 MB
 ```
 
-Salida esperada (modo `--s3`):
+Salida esperada (modo `--s3`, corpus 5 GB):
 
 ```
 Títulos base  : 39,608
 Repeticiones  : 2,126x  (para alcanzar ~5,000MB)
 Total docs    : 84,206,608
-Modo          : stream directo a S3 (sin disco local)
+Modo          : S3 server-side copy (rápido, sin datos por red)
 
-  0.45 GB subidos...
-  1.23 GB subidos...
-  ...
-✓ corpus.txt  →  s3://mi-indice-gutenberg/input/corpus.txt  (5.00 GB)
+  Estrategia  : S3 server-side copy
+  Chunk base  : 28x títulos  ≈ 50 MB
+  Copias S3   : 100 × ≈50 MB  →  ≈5.00 GB
+
+  [1/4] Generando chunk base en memoria... ✓  (50.2 MB)
+  [2/4] Limpiando input anterior en S3... ✓
+  [3/4] Subiendo chunk base (50.2 MB)... ✓
+  [4/4] Ensamblando corpus (100 copias, 0 datos por red)...
+        100/100 partes  (5.02 GB)...
+  ✓ corpus.txt  →  s3://mi-indice-gutenberg/input/corpus.txt  (5.02 GB)
 ✓ doc_map.txt →  s3://mi-indice-gutenberg/doc_map.txt
 ```
+
+> **Nota:** En lugar de enviar 5 GB por la red, el script genera un chunk base de ~50 MB,  
+> lo sube una sola vez y le pide a S3 que lo copie 100 veces de forma interna.  
+> Tiempo total: ~30–60 segundos (vs. horas con el método anterior).
 
 ---
 
