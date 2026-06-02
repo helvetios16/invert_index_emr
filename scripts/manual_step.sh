@@ -8,20 +8,20 @@
 #   bash scripts/upload_s3.sh [bucket]
 #
 # Uso:
-#   bash scripts/manual_step.sh              <- 1 core (default)
-#   bash scripts/manual_step.sh --cores 2   <- 2 cores (500MB+)
-#   bash scripts/manual_step.sh --cores 3   <- 3 cores (5GB)
+#   bash scripts/manual_step.sh              <- 4 cores (default)
+#   bash scripts/manual_step.sh --cores 2   <- 2 cores
+#   bash scripts/manual_step.sh --cores 3   <- 3 cores
 #
 # Guía de cores según tamaño del corpus:
 #   ~1.8MB  → 1 core  (~5 min)
 #   ~500MB  → 2 cores (~10 min)
-#   ~5GB    → 3 cores (~20 min)
+#   ~5GB    → 3-4 cores (~15-20 min)
 # =============================================================================
 set -euo pipefail
 
 BUCKET="mi-indice-gutenberg"
 REGION="us-east-1"
-CORES=1
+CORES=4
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
